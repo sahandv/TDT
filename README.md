@@ -2,6 +2,12 @@
 
 This repository is the code for the thesis entitled "Deep and Temporal Ontology Guided Clustering Methods and Representation Learning for Topic Detection and Tracking".
 
+To cite the work:
+
+Vahidnia, Sahand and Abbasi, Alireza and Abbass, Hussein, A Temporal Ontology Guided Clustering Methodology with a Case Study on Detection and Tracking of Artificial Intelligence Topics. Available at SSRN: https://ssrn.com/abstract=4200134 or http://dx.doi.org/10.2139/ssrn.4200134
+
+
+S Vahidnia, A Abbasi, HA Abbass , Embedding-based Detection and Extraction of Research Topics from Academic Documents Using Deep Clustering. Journal of Data and Information Science, 2021
 
 ___
 
