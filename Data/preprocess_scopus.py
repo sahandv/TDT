@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+This is a sample code for preprocessing Scopus data. It enables you to see how the abstracts and keywords are cleaned and lemmatised for this project.
+
 Created on Mon Aug 26 19:28:36 2019
 
 @author: github.com/sahandv
 """
+
 import sys
 import gc
 from tqdm import tqdm
