@@ -1,6 +1,6 @@
 # Topic Detection and Tracking
 
-This directory includes two main TDT codes. `DEC` directory includes the code for deep embedded clustering, while the `continuous_clustering_ontology_guided_with_keywordembedding_iterative.py` code contains the main class and running subroutines for ontology guided clustering, a.k.a `the `OGC` algorithm.
+This directory includes two main TDT codes. `DEC` directory includes the code for deep embedded clustering, while the `continuous_clustering_ontology_guided_with_keywordembedding_iterative.py` code contains the main class and running subroutines for ontology guided clustering, a.k.a the `OGC` algorithm.
 
 ## OGC
 
