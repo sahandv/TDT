@@ -2,6 +2,8 @@
 
 This repository is the code for the thesis entitled "Deep and Temporal Ontology Guided Clustering Methods and Representation Learning for Topic Detection and Tracking".
 
+For the dataset, please visit: doi:10.17632/xn474x8hvf.1
+
 To cite the work:
 
 S Vahidnia, A Abbasi, HA Abbass, A Temporal Ontology Guided Clustering Methodology with a Case Study on Detection and Tracking of Artificial Intelligence Topics. Available at SSRN http://dx.doi.org/10.2139/ssrn.4200134
