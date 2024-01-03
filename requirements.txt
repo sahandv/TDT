@@ -1,0 +1,13 @@
+gensim
+nltk
+scikit-learn
+scipy
+pandas
+matplotlib
+plotly
+seaborn
+pyplot
+graphviz
+networkx
+pydot
+tqdm
