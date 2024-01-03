@@ -6,47 +6,45 @@ Created on Wed Jun 23 08:33:08 2021
 
 @author: github.com/sahandv
 """
-import time
+import os
+import sys
 import gc
 import copy
 import random
-import pickle
-from multiprocessing import Pool
 from datetime import datetime
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
-from matplotlib import cm
 import plotly.express as px
 from plotly.offline import plot
-from random import randint
 from scipy import spatial
 import logging
 import json
 import itertools
 from itertools import chain
-from collections import Counter
 from collections import defaultdict
-import scipy.cluster.hierarchy as sch
 import argparse
+import pickle
 
-from sklearn.decomposition import PCA
-from sklearn.cluster import AgglomerativeClustering, KMeans
-from sklearn import metrics
 from sklearn.metrics.cluster import silhouette_score,homogeneity_score,adjusted_rand_score
 from sklearn.metrics.cluster import normalized_mutual_info_score,adjusted_mutual_info_score
 from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
-from sklearn.manifold import TSNE
-from sklearn.neighbors import KernelDensity
 from gensim.models import FastText as fasttext_gensim
 import networkx as nx
-from networkx.drawing.nx_agraph import graphviz_layout,write_dot
+from networkx.drawing.nx_agraph import graphviz_layout
+
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.feature_extraction.text import CountVectorizer
+import nltk
+from nltk.corpus import stopwords
 
 from sciosci.assets import text_assets as ta
 from sciosci.assets import advanced_assets as aa
-from sciosci.assets.dendrogram_cut import DendrogramCut
+
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('wordnet')
 
 # from DEC.DEC_keras import DEC_simple_run
 
@@ -98,6 +96,67 @@ def plot_3D(X,labels,predictions,opacity=0.7):
     
     fig = px.scatter_3d(X_df, x='x_ax', y='y_ax',z='z_ax', color='class', opacity=opacity,hover_name='labels') #.iloc[X_grouped[i]]
     plot(fig)
+
+def get_abstract_keywords(corpus,keywords_wanted,max_df=0.9,max_features=None):
+    stop_words = set(stopwords.words("english"))
+    cv=CountVectorizer(max_df=max_df,stop_words=stop_words, max_features=max_features, ngram_range=(1,1))
+    X=cv.fit_transform(corpus)
+    # get feature names
+    feature_names=cv.get_feature_names()
+    tfidf_transformer=TfidfTransformer(smooth_idf=True,use_idf=True)
+    tfidf_transformer.fit(X)
+    keywords_tfidf = []
+    keywords_sorted = []
+    for doc in tqdm(corpus,total=len(corpus)):
+        tf_idf_vector=tfidf_transformer.transform(cv.transform([doc]))
+        sorted_items=ta.sort_coo(tf_idf_vector.tocoo())
+        keywords_sorted.append(sorted_items)
+        keywords_tfidf.append(ta.extract_topn_from_vector(feature_names,sorted_items,keywords_wanted))
+    return keywords_tfidf
+
+def get_corpus_top_keywords(abstract_keywords_dict=None):
+    if abstract_keywords_dict == None:
+        print("keywords should be provided")
+        return False
+    terms = []
+    values = []
+    for doc in abstract_keywords_dict:
+        if doc != None:
+            terms = terms+list(doc.keys())
+            values = values+list(doc.values())
+    terms_df = pd.DataFrame({'terms':terms,'value':values}).groupby('terms').sum().sort_values('value',ascending=False)
+    return terms_df
+
+def find_max_item_value_in_all_cluster(haystack,needle,cluster_exception=None):
+    max_val = 0
+    max_index = None
+    counter = 0
+    for item in haystack:
+        try:
+            if item[needle]>max_val:
+                if cluster_exception==None:
+                    max_val = item[needle]
+                    max_index = counter
+                else:
+                    if cluster_exception != counter:
+                        max_val = item[needle] 
+                        max_index = counter
+        except:
+            pass
+        counter+=1
+
+        if max_index!=None:
+            row_max = haystack[max_index][list(haystack[max_index].keys())[0]] # Will give the maximum value (first item) of the row with max value of the needle. This gives us a perspective to see how this score compares to the max in the same row.
+        else:
+            row_max = 0
+    # except:
+        # row_max = None
+    return max_val,row_max
+
+def kw_to_string(kw:list):
+    kw = [k.replace(' ','_') for k in kw]
+    return ' '.join(kw)
+
 
 class OGC:
     """
@@ -446,8 +505,7 @@ class OGC:
         
         for i in range(self.k):
             self.class_radius[i] = None
-
-            
+   
     def get_distance(self,vec_a,vec_b,distance_metric:str='euclidean'):
         # self.verbose(4,debug='vectors are:'+str(vec_a)+'\n'+str(vec_b))
         if distance_metric == 'euclidean':
@@ -744,8 +802,6 @@ class OGC:
         else:
             self.classifications.loc[self.classifications['t']==t,'class'] = self.classifications[self.classifications['t']==t][self.columns_vector].apply(lambda x: self.assign_cluster(vec=x,ignore=ignore,active=active),axis = 1)
 
-
-
     def cluster(self,t,n_iter,weights,ignore:list=None):
         """
         Parameters
@@ -868,7 +924,6 @@ class OGC:
         
         return new_cluster_id
         
-    
     def sub_cluster(self,t:int,to_split:int,new_centroids:list,n_iter:int,a:float,weight=None,sub_k:int=2):
         """
         Parameters
@@ -1582,31 +1637,50 @@ class OGC:
         self.centroids_history_t.append(self.centroids)
                 # input("Merge ended. Press Enter to continue...")
 
-#%% SCOPUS DATA -- Doc2Vec
+# SCOPUS DATA -- Doc2Vec
 # =============================================================================
 # Load data and init
 # =============================================================================
-def main(args):
-    kw_num = 6 # max number of keywords per doc
-    datapath = '/home/sahand/GoogleDrive/sohanad1990/Data/' 
+def main(args,date):
+    # kw_num = 6 # max number of keywords per doc
+    # datapath = '/home/sahand/GoogleDrive/sohanad1990/Data/' 
 
-    classifications_path = 'Corpus/Scopus new/clean/clustering results/ESWA/'
-    model_path = 'FastText Models/gensim41/FastText100D-dim-scopus-update-gensim41-w5.model'
-    ontology_path = 'Corpus/Taxonomy/concept_parents lvl2 DFS'
-    ontology_indexed_path = 'Corpus/Scopus new/clean/kw ontology search/keyword_search_pre-index.json'
-    all_columns_path = 'Corpus/Scopus new/clean/keyword pre-processed for fasttext - nov14'
-    all_column_years_path = 'Corpus/Scopus new/clean/data with abstract'
-    concept_column_path = 'Corpus/Scopus new/clean/mapped concepts for keywords'
-    concept_embeddings_path = 'Corpus/Scopus new/embeddings/concepts/node2vec/50D p1 q05 len20 average of concepts'
-    corpus_path = 'Corpus/Scopus new/clean/abstract_title method_b_3'
-    vectros_main_path = 'Corpus/Scopus new/embeddings/doc2vec 100D dm=1 window=12 gensim41'
+    # classifications_path = 'Corpus/Scopus new/clean/clustering results/ESWA/'
+    # model_path = 'FastText Models/gensim41/FastText100D-dim-scopus-update-gensim41-w5.model'
+    # ontology_path = 'Corpus/Taxonomy/concept_parents lvl2 DFS'
+    # ontology_indexed_path = 'Corpus/Scopus new/clean/kw ontology search/keyword_search_pre-index.json'
+    # all_columns_path = 'Corpus/Scopus new/clean/keyword pre-processed for fasttext - nov14'
+    # all_column_years_path = 'Corpus/Scopus new/clean/data with abstract'
+    # concept_column_path = 'Corpus/Scopus new/clean/mapped concepts for keywords'
+    # concept_embeddings_path = 'Corpus/Scopus new/embeddings/concepts/node2vec/50D p1 q05 len20 average of concepts'
+    # corpus_path = 'Corpus/Scopus new/clean/abstract_title method_b_3'
+    # vectros_main_path = 'Corpus/Scopus new/embeddings/doc2vec 100D dm=1 window=12 gensim41'
 
+    kw_num = args.kw_num # max number of keywords per doc
+    datapath = args.datapath #'/home/sahand/GoogleDrive/sohanad1990/Data/'
+
+    classifications_path = args.classifications_path #'Corpus/Scopus new/clean/clustering results/ESWA/'
+    model_path = args.model_path #'FastText Models/gensim41/FastText100D-dim-scopus-update-gensim41-w5.model'
+    ontology_path = args.ontology_path #'Corpus/Taxonomy/concept_parents lvl2 DFS'
+    ontology_indexed_path = args.ontology_indexed_path #'Corpus/Scopus new/clean/kw ontology search/keyword_search_pre-index.json'
+    all_columns_path = args.all_columns_path #'Corpus/Scopus new/clean/keyword pre-processed for fasttext - nov14'
+    all_column_years_path = args.all_column_years_path #'Corpus/Scopus new/clean/data with abstract'
+    concept_column_path = args.concept_column_path #'Corpus/Scopus new/clean/mapped concepts for keywords'
+    concept_embeddings_path = args.concept_embeddings_path #'Corpus/Scopus new/embeddings/concepts/node2vec/50D p1 q05 len20 average of concepts'
+    corpus_path = args.corpus_path #'Corpus/Scopus new/clean/abstract_title method_b_3'
+    vectros_main_path = args.vectros_main_path #'Corpus/Scopus new/embeddings/doc2vec 100D dm=1 window=12 gensim41'
     # datapath = '/mnt/6016589416586D52/Users/z5204044/GoogleDrive/GoogleDrive/Data/' #C1314
     gensim_model_address = datapath+model_path
     #'Doc2Vec Models/b3-gensim41/dim-scop doc2vec 300D dm=1 window=10 b3 gensim41'
     model_AI = fasttext_gensim.load(gensim_model_address)
     # model_AI.save(datapath+'Corpus/Dimensions All/models/Fasttext/FastText100D-dim-scopus-update-gensim383.model')
 
+    k0 = args.n_clusters_init # 7 # number of clusters
+    skip_years = args.skip_years # 2001 # skip the years before this year inclusively
+    t_zero = args.t_zero # 2000 # the year that t_0 or the first chuck of clustering data is up to
+    t_max = args.t_max # 2021 # the last year to end the clustering
+
+    # =============================================================================
     # Read data
     with open(datapath+ontology_path) as f:
         ontology_table = json.load(f)
@@ -1632,12 +1706,36 @@ def main(args):
     vectors_main = pd.read_csv(datapath+vectros_main_path)#Corpus/Scopus new/embeddings/doc2vec 300D dm=1 window=10 b3 gensim41
     # vectors_main = pd.read_csv(datapath+'Corpus/Scopus new/embeddings/node2vec100D p2 q1 len5-w50 mc1 mt_w2v unsorted.csv',index_col=0).reset_index()#Corpus/Scopus new/embeddings/doc2vec 300D dm=1 window=10 b3 gensim41
 
-    return 0
+    print('Data loaded.')
 
+    # =============================================================================
+    # Check data
+    if all_columns.shape[0]!=corpus_data.shape[0]:
+        print('Oh no! data mismatch here...Please fix it!')
+
+    if all_columns.shape[0]!=vectors_main.shape[0]:
+        print('Oh no! data mismatch here...Please fix it!')
+
+    if all_columns.shape[0]!=concept_embeddings.shape[0]:
+        print('Oh no! data mismatch here...Please fix it!')
+
+    if all_columns.shape[0]!=concept_column.shape[0]:
+        print('Oh no! data mismatch here...Please fix it!')
+
+    print('Data checked.')
+
+    print("all_columns",all_columns)
+    print("corpus_data",corpus_data)
+    print("vectors_main",vectors_main)
+    print("concept_embeddings",concept_embeddings)
+    print("concept_column",concept_column)
+
+    # =============================================================================
     # Concat data
     combined_data = pd.concat([all_columns, corpus_data, vectors_main,concept_embeddings], axis=1)
     combined_data = combined_data.dropna(subset=['id','PY','abstract'])
 
+    # =============================================================================
     # Clean data
     combined_data = combined_data.drop_duplicates(subset='id', keep="last")
     combined_data.id.value_counts()
@@ -1650,58 +1748,74 @@ def main(args):
 
     # combined_data.PY.hist(bins=60)
 
+    # =============================================================================
+    # prepare keywords
     combined_data['DE'] = combined_data['DE'].progress_apply(lambda x: x.split(" | "))
     combined_data['DE'] = combined_data['DE'].progress_apply(lambda x: x[:kw_num] if len(x)>kw_num-1 else x) # cut off to 6 keywords only
     # vectors_main.drop('id',axis=1,inplace=True)
 
-    k0 = 7
-    model = OGC(v=5,k=k0,max_keyword_distance=0.55,boundary_epsilon_growth=0,distance_metric='cosine',cumulative=False,log=True) 
+    # =============================================================================
+    # intialize the model
+    model = OGC(v=5,
+                k=k0,
+                max_keyword_distance=args.max_keyword_distance,
+                boundary_epsilon_growth=args.boundary_epsilon_growth,
+                distance_metric=args.distance_metric,
+                cumulative=args.cumulative,
+                merge_split_iters=args.merge_split_iters,
+                split_auto_threshold=args.split_auto_threshold,
+                merge_auto_threshold=args.merge_auto_threshold,
+                split_regression_coefficient=args.split_regression_coefficient,
+                split_regression_offset=args.split_regression_offset,
+                merge_regression_coefficient=args.merge_regression_coefficient,
+                merge_regression_offset=args.merge_regression_offset,
+                initializer=args.initializer,
+                log=args.log) 
     model.set_ontology_dict(ontology_table)
     model.set_keyword_embedding_model(model_AI)
     model.set_ontology_keyword_search_index(ont_index)
     ontology_dict = model.prepare_ontology()
 
-    vectors_t0 = combined_data[(combined_data.PY<2000)] # & (combined_data.PY>1999)
+    vectors_t0 = combined_data[(combined_data.PY<t_zero)] # & (combined_data.PY>1999)
     vectors_t0_full = vectors_t0.copy()
     keywords = vectors_t0['DE'].values.tolist()
     vectors_t0.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
     vectors_t0_fixed = vectors_t0.copy()
     # vectors_t0_full = combined_data.loc[vectors_t0.index]
 
+    # run the model for the first time slice, then get the clusters
     # dendrogram = aa.fancy_dendrogram(sch.linkage(vectors_t0, method='ward'),truncate_mode='lastp',p=800,show_contracted=True,figsize=(15,9)) #single #average #ward
     model.fit(vectors_t0.values,keywords) #merge_sub_clusters=True,merge_split_iters=20
-    predicted_labels = model.predict(vectors_t0.values)
+
+    # =============================================================================
+    # Evaluation of time slice 0
+
+    # predicted_labels = model.predict(vectors_t0.values)
     # classifications = model.classifications
-
     # pd.DataFrame(predicted_labels).hist(bins=k0)
-    gs = pd.DataFrame(predicted_labels,columns=['labels']).value_counts()
-
+    # gs = pd.DataFrame(predicted_labels,columns=['labels']).value_counts()
+    # dbi_0 = davies_bouldin_score(vectors_t0.values, predicted_labels)
+    # sil_0 = silhouette_score(vectors_t0.values, predicted_labels)
+    # chs_0 = calinski_harabasz_score(vectors_t0.values,predicted_labels)
     # =============================================================================
-
-    dbi_0 = davies_bouldin_score(vectors_t0.values, predicted_labels)
-    sil_0 = silhouette_score(vectors_t0.values, predicted_labels)
-    chs_0 = calinski_harabasz_score(vectors_t0.values,predicted_labels)
-
-
-    # =============================================================================
-
+    global model_backup
     model_backup = copy.deepcopy(model)
-    model_backup_initial = copy.deepcopy(model)
+    # model_backup_initial = copy.deepcopy(model)
 
     tmps = []
     logs = []
-    classifications_hist = []
-    classifications_log = []
-    tmps.append(copy.deepcopy(model_backup).temp)
-    logs.append(copy.deepcopy(model_backup).event_log)
+    # classifications_hist = []
+    # classifications_log = []
+    # tmps.append(copy.deepcopy(model_backup).temp)
+    # logs.append(copy.deepcopy(model_backup).event_log)
 
-    model = copy.deepcopy(model_backup)
+    # model = copy.deepcopy(model_backup)
     model.v=5
     model.log = True
     print("verbose",model.v)
-    model.merge_split_iters = 1
-    skip_years = 2001
-    for t,year in enumerate(range(2000,2021)):
+    # model.merge_split_iters = args.merge_split_iters
+
+    for t,year in enumerate(range(t_zero,t_max)):
         if year>skip_years:
             print('processing year',t+1,year)
             model.v=5
@@ -1720,64 +1834,48 @@ def main(args):
     # =============================================================================
     # Evaluation of time slices
     # =============================================================================
+    try:
+        if args.evaluate_model:
+            dbi = []
+            sil = []
+            chs = []
 
-    vectors_t2 = combined_data[combined_data.PY==2010]
-    keywords = vectors_t2['DE'].values.tolist()
-    vectors_t2.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
-    predicted_labels_1 = model.predict(vectors_t2.values)
+            for y in tqdm(range(args.eval_start,args.eval_end,args.eval_step)):
+                vectors_t2 = combined_data[combined_data.PY==y]
+                keywords = vectors_t2['DE'].values.tolist()
+                vectors_t2.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
+                predicted_labels_1 = model.predict(vectors_t2.values)
 
-    dbi_10 = davies_bouldin_score(vectors_t2.values, predicted_labels_1)
-    sil_10 = silhouette_score(vectors_t2.values, predicted_labels_1)
-    chs_10 = calinski_harabasz_score(vectors_t2.values,predicted_labels_1)
+                dbi.append(davies_bouldin_score(vectors_t2.values, predicted_labels_1))
+                sil.append(silhouette_score(vectors_t2.values, predicted_labels_1))
+                chs.append(calinski_harabasz_score(vectors_t2.values,predicted_labels_1))
 
-    vectors_t2 = combined_data[combined_data.PY==2020]
-    keywords = vectors_t2['DE'].values.tolist()
-    vectors_t2.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
-    predicted_labels_1 = model.predict(vectors_t2.values)
-    dbi_20 = davies_bouldin_score(vectors_t2.values, predicted_labels_1)
-    sil_20 = silhouette_score(vectors_t2.values, predicted_labels_1)
-    chs_20 = calinski_harabasz_score(vectors_t2.values,predicted_labels_1)
+            scores = pd.DataFrame({'dbi':dbi,'sil':sil,'chs':chs})
+            scores['year'] = list(range(args.eval_start,args.eval_end,args.eval_step))
+            scores.to_csv(datapath+classifications_path+date+' scores.csv',index=False)
+    except Exception as e:
+        print("Evaluation failed.")
+        print(e)
 
-
-    predicted_labels_2 = model.classifications[model.classifications['t']==12]['class'].values
-    vectors_t2 = model.classifications[model.classifications['t']==12].drop(['t','class','kw'],axis=1)
-
-    dbi_11 = davies_bouldin_score(vectors_t2.values, predicted_labels_2)
-    sil_11 = silhouette_score(vectors_t2.values, predicted_labels_2)
-    chs_11 = calinski_harabasz_score(vectors_t2.values,predicted_labels_2)
-
-
-    predicted_labels_2 = model.classifications[model.classifications['t']==21]['class'].values
-    vectors_t2 = model.classifications[model.classifications['t']==21].drop(['t','class','kw'],axis=1)
-
-    dbi_21 = davies_bouldin_score(vectors_t2.values, predicted_labels_2)
-    sil_21 = silhouette_score(vectors_t2.values, predicted_labels_2)
-    chs_21 = calinski_harabasz_score(vectors_t2.values,predicted_labels_2)
-
-
-    dbi = [dbi_0,dbi_11,dbi_21]
-    sil = [sil_0,sil_11,sil_21]
-    chs = [chs_0,chs_11,chs_21]
-    scores = pd.DataFrame({'dbi':dbi,'sil':sil,'chs':chs})
-    scores['year'] = [2000,2010,2020]
-
-
-
+    # =============================================================================
+    # Save model and classifications
     # temp = model.temp['root_selection_return_fail']['data']['classifications_portion']['roots']
     classifications = model.classifications
-
-
     date = datetime.today().strftime('%Y-%m-%d')
-    
-    classifications.to_csv(datapath+classifications_path+date+' results.csv',index=False)
-    scores.to_csv(datapath+classifications_path+date+' scores.csv',index=False)
-    # with open(datapath+'Corpus/Scopus new/clean/clustering results/ev8/'+date+' model.pkl', 'wb') as outp:
-    #     pickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
-#%% Visualisation
+    if args.save_classifications:
+        classifications.to_csv(datapath+classifications_path+date+' results.csv',index=False)
 
-def visualise(model,datapath,date,clustering_subdir='ESWA/'):
+    if args.save_model:
+        with open(datapath+classifications_path+date+' model.pkl', 'wb') as outp:
+            pickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
+
+    return model, combined_data
+
+def visualise(args,model,date):
+
+    datapath = args.datapath
     # Save the evolutions
-    clustering_subdir = ''
+    
     evolutions = model.evolution_events
     evolutions_new = {}
     for k,v in evolutions.items():
@@ -1786,7 +1884,7 @@ def visualise(model,datapath,date,clustering_subdir='ESWA/'):
         evolutions_new[k]['event'] = evolutions[k]['event']
         evolutions_new[k]['location'] = evolutions[k]['location']
         evolutions_new[k]['t'] = evolutions[k]['t']
-    with open(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+''+date+' evolutions.json', "w") as outfile:
+    with open(datapath+args.clustering_subdir+date+' evolutions.json', "w") as outfile:
         json.dump(evolutions_new, outfile)
     model.populations
 
@@ -1899,81 +1997,14 @@ def visualise(model,datapath,date,clustering_subdir='ESWA/'):
     # A.layout(prog="dot")
     # A.draw('out.svg')
     nx.draw(A, pos, node_color = colors, with_labels=True, arrows=True, node_size = 350)
-    plt.savefig(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+''+str(date)+' evolution map colored.svg')
+    plt.savefig(datapath+args.clustering_path+date+' evolution map colored.svg')
 
 # r = {k:v for k,v in tqdm(evolutions.items()) if v['c'] == 62}
 # nx.draw(G, with_labels=True)
 
-#%% Labeling
-def labeling(model,datapath,date,clustering_subdir='ESWA/'):
-    from sklearn.feature_extraction.text import TfidfTransformer
-    from sklearn.feature_extraction.text import CountVectorizer
-    import nltk
-    from nltk.corpus import stopwords
-    nltk.download('stopwords')
-    nltk.download('punkt')
-    nltk.download('wordnet')
+def labeling(args,model):
     stop_words = set(stopwords.words("english"))
-
-
-    def get_abstract_keywords(corpus,keywords_wanted,max_df=0.9,max_features=None):
-        cv=CountVectorizer(max_df=max_df,stop_words=stop_words, max_features=max_features, ngram_range=(1,1))
-        X=cv.fit_transform(corpus)
-        # get feature names
-        feature_names=cv.get_feature_names()
-        tfidf_transformer=TfidfTransformer(smooth_idf=True,use_idf=True)
-        tfidf_transformer.fit(X)
-        keywords_tfidf = []
-        keywords_sorted = []
-        for doc in tqdm(corpus,total=len(corpus)):
-            tf_idf_vector=tfidf_transformer.transform(cv.transform([doc]))
-            sorted_items=ta.sort_coo(tf_idf_vector.tocoo())
-            keywords_sorted.append(sorted_items)
-            keywords_tfidf.append(ta.extract_topn_from_vector(feature_names,sorted_items,keywords_wanted))
-        return keywords_tfidf
-
-    def get_corpus_top_keywords(abstract_keywords_dict=None):
-        if abstract_keywords_dict == None:
-            print("keywords should be provided")
-            return False
-        terms = []
-        values = []
-        for doc in abstract_keywords_dict:
-            if doc != None:
-                terms = terms+list(doc.keys())
-                values = values+list(doc.values())
-        terms_df = pd.DataFrame({'terms':terms,'value':values}).groupby('terms').sum().sort_values('value',ascending=False)
-        return terms_df
-
-    def find_max_item_value_in_all_cluster(haystack,needle,cluster_exception=None):
-        max_val = 0
-        max_index = None
-        counter = 0
-        for item in haystack:
-            try:
-                if item[needle]>max_val:
-                    if cluster_exception==None:
-                        max_val = item[needle]
-                        max_index = counter
-                    else:
-                        if cluster_exception != counter:
-                            max_val = item[needle] 
-                            max_index = counter
-            except:
-                pass
-            counter+=1
-
-            if max_index!=None:
-                row_max = haystack[max_index][list(haystack[max_index].keys())[0]] # Will give the maximum value (first item) of the row with max value of the needle. This gives us a perspective to see how this score compares to the max in the same row.
-            else:
-                row_max = 0
-        # except:
-            # row_max = None
-        return max_val,row_max
-
-    def kw_to_string(kw:list):
-        kw = [k.replace(' ','_') for k in kw]
-        return ' '.join(kw)
+    datapath = args.datapath
 
     classifications = model.classifications_log
     # classifications = classifications_log[-1]
@@ -2002,7 +2033,7 @@ def labeling(model,datapath,date,clustering_subdir='ESWA/'):
             
             cluster_index+=1
         cluster_keywords_df = pd.DataFrame(cluster_keywords)
-        cluster_keywords_df.to_csv(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+'t'+str(t)+' labels c.csv',index=False,header=False)
+        cluster_keywords_df.to_csv(datapath+args.clustering_path+'t'+str(t)+' labels c.csv',index=False,header=False)
         
         
         # Get term cluster labels (just terms and not scores)
@@ -2012,13 +2043,13 @@ def labeling(model,datapath,date,clustering_subdir='ESWA/'):
             cluster_keywords_terms.append(list(item.keys()))
             cluster_keywords_scores.append(list(item.values()))
         
-        pd.DataFrame(cluster_keywords_terms).T.to_csv(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+'t'+str(t)+' terms.csv',index=False)
-        pd.DataFrame(cluster_keywords_scores).T.to_csv(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+'t'+str(t)+' scores.csv',index=False)
+        pd.DataFrame(cluster_keywords_terms).T.to_csv(datapath+args.clustering_path+'t'+str(t)+' terms.csv',index=False)
+        pd.DataFrame(cluster_keywords_scores).T.to_csv(datapath+args.clustering_path+'t'+str(t)+' scores.csv',index=False)
         
         # Get term frequencies for each period
         terms = ' '.join(cluster_as_string).split()
         terms = [x for x in terms if x not in list(stop_words)]
-        pd.DataFrame(terms,columns=['terms'])['terms'].value_counts().to_csv(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+'t'+str(t)+' frequency.csv',header=False)
+        pd.DataFrame(terms,columns=['terms'])['terms'].value_counts().to_csv(datapath+args.clustering_path+'t'+str(t)+' frequency.csv',header=False)
 
     final_classifications = classifications[21]
     year_clusters = final_classifications[final_classifications['t']==21]['class'].value_counts().reset_index()
@@ -2062,16 +2093,11 @@ def labeling(model,datapath,date,clustering_subdir='ESWA/'):
             
             cluster_index+=1
         cluster_keywords_df = pd.DataFrame(cluster_keywords)
-        cluster_keywords_df.to_csv(datapath+'Corpus/Dimensions All/clean/clustering results/'+clustering_subdir+'t'+str(t)+' labels c t.csv',index=False,header=False)
-
+        cluster_keywords_df.to_csv(datapath+args.clustering_path+'t'+str(t)+' labels c t.csv',index=False,header=False)
         
-
-
-
-#%% Clustering benchmark __ Sample
 def benchmark_sample(model):
     classifications_pure = model.classifications
-    cluster_populations = classifications_pure['class'].value_counts()
+    # cluster_populations = classifications_pure['class'].value_counts()
     classifications_t = classifications_pure[classifications_pure['t']>=21]
     labels = classifications_t['class']
     vecs = classifications_t.drop(['class','t','kw'],axis=1,inplace=False)
@@ -2079,3 +2105,60 @@ def benchmark_sample(model):
     dbi = davies_bouldin_score(vecs.values, labels)
     sil = silhouette_score(vecs.values, labels)
     chs = calinski_harabasz_score(vecs.values,labels)
+
+def parse_arguments(args=None):
+    parser = argparse.ArgumentParser(description='OGC clustering')
+    parser.add_argument('--datapath', type=str, default='/home/sahand/GoogleDrive/sohanad1990/Data/', help='Data path')
+    parser.add_argument('--model_path', type=str, default='FastText Models/gensim41/FastText100D-dim-scopus-update-gensim41-w5.model', help='Model path')
+    parser.add_argument('--ontology_path', type=str, default='Corpus/Taxonomy/concept_parents lvl2 DFS', help='Ontology path')
+    parser.add_argument('--ontology_indexed_path', type=str, default='Corpus/Scopus new/clean/kw ontology search/keyword_search_pre-index.json', help='Ontology indexed path')
+    parser.add_argument('--all_columns_path', type=str, default='Corpus/Scopus new/clean/keyword pre-processed for fasttext - nov14', help='All columns path')
+    parser.add_argument('--all_column_years_path', type=str, default='Corpus/Scopus new/clean/data with abstract', help='All column data with years column path')
+    parser.add_argument('--concept_column_path', type=str, default='Corpus/Scopus new/clean/mapped concepts for keywords', help='Concept column path')
+    parser.add_argument('--concept_embeddings_path', type=str, default='Corpus/Scopus new/embeddings/concepts/node2vec/50D p1 q05 len20 average of concepts', help='Concept embeddings path')
+    parser.add_argument('--corpus_path', type=str, default='Corpus/Scopus new/clean/abstract_title method_b_3', help='Corpus path')
+    parser.add_argument('--vectros_main_path', type=str, default='Corpus/Scopus new/embeddings/doc2vec 100D dm=1 window=12 gensim41', help='Vectros main path')
+    parser.add_argument('--clustering_path', type=str, default='Corpus/Scopus new/clean/clustering results/ESWA/', help='Clustering path')
+    parser.add_argument('--classifications_path', type=str, default='Corpus/Scopus new/clean/clustering results/ESWA/', help='Classification path')
+    parser.add_argument('--kw_num', type=int, default=6, help='Max number of keywords per doc')
+    parser.add_argument('--n_clusters_init', type=int, default=7, help='Number of clusters')
+    parser.add_argument('--skip_years', type=int, default=0, help='Skip the years before this year inclusively')
+    parser.add_argument('--t_zero', type=int, default=2000, help='The year that t_0 or the first chuck of clustering data is up to')
+    parser.add_argument('--t_max', type=int, default=2021, help='The last year to end the clustering')
+    parser.add_argument('--evaluate_model', type=bool, default=True, help='Evaluate model')
+    parser.add_argument('--eval_start', type=int, default=2001, help='Evaluation start year')
+    parser.add_argument('--eval_end', type=int, default=2021, help='Evaluation end year')
+    parser.add_argument('--eval_step', type=int, default=1, help='Evaluation step')
+    parser.add_argument('--save_classifications', type=bool, default=True, help='Save classifications')
+    parser.add_argument('--save_model', type=bool, default=True, help='Save model')
+    parser.add_argument('--verbose', type=int, default=5, help='Verbose')
+    parser.add_argument('--merge_sub_clusters', type=bool, default=True, help='Merge sub clusters')
+
+    parser.add_argument('--max_keyword_distance', type=float, default=0.55, help='Max keyword distance')
+    parser.add_argument('--boundary_epsilon_growth', type=float, default=0, help='Boundary epsilon growth')
+    parser.add_argument('--distance_metric', type=str, default='cosine', help='Distance metric')
+    parser.add_argument('--cumulative', type=bool, default=False, help='Cumulative')
+    parser.add_argument('--log', type=bool, default=True, help='Log')
+
+    parser.add_argument('--merge_split_iters', type=int, default=1, help='Merge split iters')
+    parser.add_argument('--merge_auto_threshold', type=int, default=2100, help='Merge auto threshold')
+    parser.add_argument('--split_auto_threshold', type=int, default=2450, help='Split auto threshold')
+
+    parser.add_argument('--merge_regression_coefficient', type=float, default=0.7047367793518765, help='Merge regression coefficient')
+    parser.add_argument('--merge_regression_offset', type=float, default=2000, help='Merge regression offset')
+    parser.add_argument('--split_regression_coefficient', type=float, default=-0.7147367793518765, help='Split regression coefficient')
+    parser.add_argument('--split_regression_offset', type=float, default=-48000, help='Split regression offset')
+    parser.add_argument('--initializer', type=str, default='random_generated', help='Initializer')
+
+    return parser.parse_args(args)
+
+if __name__ == '__main__':
+    args = parse_arguments()
+    date = str(datetime.today().strftime('%Y-%m-%d'))
+    print('Running model...')
+    model, combined_data = main(args,date)
+    print('Running visualisation...')
+    visualise(args,model,date)
+    print('Running labeling...')
+    labeling(args,model)
+
