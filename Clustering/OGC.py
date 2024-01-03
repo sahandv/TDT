@@ -2108,7 +2108,7 @@ def benchmark_sample(model):
 
 def parse_arguments(args=None):
     parser = argparse.ArgumentParser(description='OGC clustering')
-    parser.add_argument('--datapath', type=str, default='/home/sahand/GoogleDrive/sohanad1990/Data/', help='Data path')
+    parser.add_argument('--datapath', type=str, default='/home/sahand/Documents/ESWA/', help='Data path')
     parser.add_argument('--model_path', type=str, default='embeddings/fasttext gensim41/FastText100D-dim-scopus-update-gensim41-w5.model', help='Model path')
     parser.add_argument('--ontology_path', type=str, default='Corpus/ontology/concept_parents lvl2 DFS', help='Ontology path')
     parser.add_argument('--ontology_indexed_path', type=str, default='Corpus/ontology/keyword_search_pre-index.json', help='Ontology indexed path')
