@@ -26,6 +26,7 @@ from itertools import chain
 from collections import defaultdict
 import argparse
 import pickle
+import cloudpickle
 
 from sklearn.metrics.cluster import silhouette_score,homogeneity_score,adjusted_rand_score
 from sklearn.metrics.cluster import normalized_mutual_info_score,adjusted_mutual_info_score
@@ -1867,9 +1868,26 @@ def main(args,date):
 
     if args.save_model:
         with open(classifications_path+date+' model.pkl', 'wb') as outp:
-            pickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
+            try:
+                pickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
+            except Exception as e:
+                print("Model saving failed with pickle. Trying cloudpickle...")
+                print(e)
+                try:
+                    cloudpickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
+                except Exception as e:
+                    print("Model saving failed with cloudpickle. Will try to remove the lambda functions before save...")
+                    print(e)
+                    model.temp = {}
+                    
+                    try:
+                        cloudpickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
+                    except Exception as e:
+                        print("Model saving failed with cloudpickle again. Aborting...")
+                        print(e)
 
     return model, combined_data
+
 
 def visualise(args,model,date):
 
