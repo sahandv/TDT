@@ -1902,7 +1902,7 @@ def visualise(args,model,date):
         evolutions_new[k]['event'] = evolutions[k]['event']
         evolutions_new[k]['location'] = evolutions[k]['location']
         evolutions_new[k]['t'] = evolutions[k]['t']
-    with open(datapath+args.clustering_subdir+date+' evolutions.json', "w") as outfile:
+    with open(args.clustering_path+date+' evolutions.json', "w") as outfile:
         json.dump(evolutions_new, outfile)
     model.populations
 
