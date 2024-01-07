@@ -1,8 +1,8 @@
-gensim
+pandas==1.5.3
+gensim==4.3.1
 nltk
 scikit-learn
 scipy
-pandas
 matplotlib
 plotly
 seaborn
