@@ -1852,7 +1852,7 @@ def main(args,date):
 
             scores = pd.DataFrame({'dbi':dbi,'sil':sil,'chs':chs})
             scores['year'] = list(range(args.eval_start,args.eval_end,args.eval_step))
-            scores.to_csv(datapath+classifications_path+date+' scores.csv',index=False)
+            scores.to_csv(classifications_path+date+' scores.csv',index=False)
     except Exception as e:
         print("Evaluation failed.")
         print(e)
@@ -1863,10 +1863,10 @@ def main(args,date):
     classifications = model.classifications
     date = datetime.today().strftime('%Y-%m-%d')
     if args.save_classifications:
-        classifications.to_csv(datapath+classifications_path+date+' results.csv',index=False)
+        classifications.to_csv(classifications_path+date+' results.csv',index=False)
 
     if args.save_model:
-        with open(datapath+classifications_path+date+' model.pkl', 'wb') as outp:
+        with open(classifications_path+date+' model.pkl', 'wb') as outp:
             pickle.dump(model, outp, pickle.HIGHEST_PROTOCOL)
 
     return model, combined_data
@@ -1997,7 +1997,7 @@ def visualise(args,model,date):
     # A.layout(prog="dot")
     # A.draw('out.svg')
     nx.draw(A, pos, node_color = colors, with_labels=True, arrows=True, node_size = 350)
-    plt.savefig(datapath+args.clustering_path+date+' evolution map colored.svg')
+    plt.savefig(args.clustering_path+date+' evolution map colored.svg')
 
 # r = {k:v for k,v in tqdm(evolutions.items()) if v['c'] == 62}
 # nx.draw(G, with_labels=True)
@@ -2033,7 +2033,7 @@ def labeling(args,model):
             
             cluster_index+=1
         cluster_keywords_df = pd.DataFrame(cluster_keywords)
-        cluster_keywords_df.to_csv(datapath+args.clustering_path+'t'+str(t)+' labels c.csv',index=False,header=False)
+        cluster_keywords_df.to_csv(args.clustering_path+'t'+str(t)+' labels c.csv',index=False,header=False)
         
         
         # Get term cluster labels (just terms and not scores)
@@ -2043,13 +2043,13 @@ def labeling(args,model):
             cluster_keywords_terms.append(list(item.keys()))
             cluster_keywords_scores.append(list(item.values()))
         
-        pd.DataFrame(cluster_keywords_terms).T.to_csv(datapath+args.clustering_path+'t'+str(t)+' terms.csv',index=False)
-        pd.DataFrame(cluster_keywords_scores).T.to_csv(datapath+args.clustering_path+'t'+str(t)+' scores.csv',index=False)
+        pd.DataFrame(cluster_keywords_terms).T.to_csv(args.clustering_path+'t'+str(t)+' terms.csv',index=False)
+        pd.DataFrame(cluster_keywords_scores).T.to_csv(args.clustering_path+'t'+str(t)+' scores.csv',index=False)
         
         # Get term frequencies for each period
         terms = ' '.join(cluster_as_string).split()
         terms = [x for x in terms if x not in list(stop_words)]
-        pd.DataFrame(terms,columns=['terms'])['terms'].value_counts().to_csv(datapath+args.clustering_path+'t'+str(t)+' frequency.csv',header=False)
+        pd.DataFrame(terms,columns=['terms'])['terms'].value_counts().to_csv(args.clustering_path+'t'+str(t)+' frequency.csv',header=False)
 
     final_classifications = classifications[21]
     year_clusters = final_classifications[final_classifications['t']==21]['class'].value_counts().reset_index()
@@ -2093,7 +2093,7 @@ def labeling(args,model):
             
             cluster_index+=1
         cluster_keywords_df = pd.DataFrame(cluster_keywords)
-        cluster_keywords_df.to_csv(datapath+args.clustering_path+'t'+str(t)+' labels c t.csv',index=False,header=False)
+        cluster_keywords_df.to_csv(args.clustering_path+'t'+str(t)+' labels c t.csv',index=False,header=False)
         
 def benchmark_sample(model):
     classifications_pure = model.classifications
