@@ -99,7 +99,7 @@ def plot_3D(X,labels,predictions,opacity=0.7):
     plot(fig)
 
 def get_abstract_keywords(corpus,keywords_wanted,max_df=0.9,max_features=None):
-    stop_words = set(stopwords.words("english"))
+    stop_words = list(set(stopwords.words("english")))
     cv=CountVectorizer(max_df=max_df,stop_words=stop_words, max_features=max_features, ngram_range=(1,1))
     X=cv.fit_transform(corpus)
     # get feature names
