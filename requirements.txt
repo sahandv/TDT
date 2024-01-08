@@ -6,8 +6,8 @@ scipy
 matplotlib
 plotly
 seaborn
-pyplot
-graphviz
+pygraphviz
+cloudpickle
 networkx
 pydot
 tqdm
