@@ -27,6 +27,7 @@ from collections import defaultdict
 import argparse
 import pickle
 import cloudpickle
+import traceback
 
 from sklearn.metrics.cluster import silhouette_score,homogeneity_score,adjusted_rand_score
 from sklearn.metrics.cluster import normalized_mutual_info_score,adjusted_mutual_info_score
@@ -103,7 +104,10 @@ def get_abstract_keywords(corpus,keywords_wanted,max_df=0.9,max_features=None):
     cv=CountVectorizer(max_df=max_df,stop_words=stop_words, max_features=max_features, ngram_range=(1,1))
     X=cv.fit_transform(corpus)
     # get feature names
-    feature_names=cv.get_feature_names()
+    try:
+        feature_names=cv.get_feature_names()
+    except AttributeError:
+        feature_names=cv.get_feature_names_out()
     tfidf_transformer=TfidfTransformer(smooth_idf=True,use_idf=True)
     tfidf_transformer.fit(X)
     keywords_tfidf = []
@@ -1890,7 +1894,14 @@ def main(args,date):
 
 
 def visualise(args,model,date):
+    """Visualise the evolution of the clusters.
+        If evolutionary events are not detected or not present in the given model, will not visualise anything.
 
+    Args:
+        args: arguments from the command line
+        model: the model to visualise
+        date: the date of the run
+    """
     datapath = args.datapath
     # Save the evolutions
     
@@ -2016,102 +2027,115 @@ def visualise(args,model,date):
     # A.draw('out.svg')
     nx.draw(A, pos, node_color = colors, with_labels=True, arrows=True, node_size = 350)
     plt.savefig(args.clustering_path+date+' evolution map colored.svg')
+    return G,clusters_hist
 
 # r = {k:v for k,v in tqdm(evolutions.items()) if v['c'] == 62}
 # nx.draw(G, with_labels=True)
 
-def labeling(args,model):
+def labeling(args,model,G):
     stop_words = set(stopwords.words("english"))
     datapath = args.datapath
 
     classifications = model.classifications_log
     # classifications = classifications_log[-1]
-    for t in range(22): # Limited keywords to time t
-        # t  = 4
-        # TF-IDF (CTF-ICF)
-        cluster_as_string = []
-        cluster_ids = []
-        year_kw = classifications[t]['kw'].apply(lambda x: kw_to_string(x))
-        clusters_df = classifications[t].copy()
-        clusters = clusters_df.groupby('class').groups
-        for key in clusters.keys():
-            cluster_as_string.append(' '.join(year_kw[list(clusters[key])]))
-            cluster_ids.append(key)
-        cluster_keywords_tfidf = get_abstract_keywords(cluster_as_string,1000,max_df=0.8)
-        
-        cluster_keywords = []
-        cluster_index = 0
-        for i,items in enumerate(cluster_keywords_tfidf):
-            c = cluster_ids[i]
-            items_tmp = [c]
-            for item in items:
-                max_data = find_max_item_value_in_all_cluster(cluster_keywords_tfidf,item,cluster_index)
-                items_tmp.append(item+' ('+str(items[item])+' | '+str(max_data[0])+'/'+str(max_data[1])+')') # (item+' :'+str(items[item])+' / '+str( max of item in all other rows))
-            cluster_keywords.append(items_tmp)
+    for t in range(args.t_max-args.t_zero): # Limited keywords to time t
+        try:
+            # t  = 4
+            # TF-IDF (CTF-ICF)
+            cluster_as_string = []
+            cluster_ids = []
+            year_kw = classifications[t]['kw'].apply(lambda x: kw_to_string(x))
+            clusters_df = classifications[t].copy()
+            clusters = clusters_df.groupby('class').groups
+            for key in clusters.keys():
+                cluster_as_string.append(' '.join(year_kw[list(clusters[key])]))
+                cluster_ids.append(key)
+            cluster_keywords_tfidf = get_abstract_keywords(cluster_as_string,1000,max_df=0.8)
             
-            cluster_index+=1
-        cluster_keywords_df = pd.DataFrame(cluster_keywords)
-        cluster_keywords_df.to_csv(args.clustering_path+'t'+str(t)+' labels c.csv',index=False,header=False)
-        
-        
-        # Get term cluster labels (just terms and not scores)
-        cluster_keywords_terms = []
-        cluster_keywords_scores = []
-        for item in cluster_keywords_tfidf:
-            cluster_keywords_terms.append(list(item.keys()))
-            cluster_keywords_scores.append(list(item.values()))
-        
-        pd.DataFrame(cluster_keywords_terms).T.to_csv(args.clustering_path+'t'+str(t)+' terms.csv',index=False)
-        pd.DataFrame(cluster_keywords_scores).T.to_csv(args.clustering_path+'t'+str(t)+' scores.csv',index=False)
-        
-        # Get term frequencies for each period
-        terms = ' '.join(cluster_as_string).split()
-        terms = [x for x in terms if x not in list(stop_words)]
-        pd.DataFrame(terms,columns=['terms'])['terms'].value_counts().to_csv(args.clustering_path+'t'+str(t)+' frequency.csv',header=False)
-
-    final_classifications = classifications[21]
-    year_clusters = final_classifications[final_classifications['t']==21]['class'].value_counts().reset_index()
-    year_clusters.columns = ['c','count']
-
-    all_nodes = list(G.nodes)
-    all_nodes = pd.DataFrame([[int(x.split('-t')[0]),int(x.split('-t')[1])] for x in all_nodes],columns=['c','t'])
-    all_nodes_g_max = all_nodes.groupby('c').max()
-    all_nodes_g_min = all_nodes.groupby('c').min()
-    all_nodes_g = all_nodes_g_min.copy()
-    all_nodes_g['tm'] = all_nodes_g_max['t']
-
-    for t in range(22): # All keywords until time t
-        # t  = 4
-        # TF-IDF (CTF-ICF)
-        final_classifications = classifications[t]
-        year_clusters = final_classifications[final_classifications['t']==t]['class'].value_counts()
-        year_clusters = list(year_clusters.index)
-        cluster_as_string = []
-        cluster_ids = []
-        
-        working_df = classifications[t][classifications[t]['class'].isin(year_clusters)]
-        
-        year_kw = working_df['kw'].apply(lambda x: kw_to_string(x))
-        clusters_df = working_df.copy()
-        clusters = clusters_df.groupby('class').groups
-        for key in clusters.keys():
-            cluster_as_string.append(' '.join(year_kw[list(clusters[key])]))
-            cluster_ids.append(key)
-        cluster_keywords_tfidf = get_abstract_keywords(cluster_as_string,1000,max_df=0.8)
-        
-        cluster_keywords = []
-        cluster_index = 0
-        for i,items in enumerate(cluster_keywords_tfidf):
-            c = cluster_ids[i]
-            items_tmp = [c]
-            for item in items:
-                max_data = find_max_item_value_in_all_cluster(cluster_keywords_tfidf,item,cluster_index)
-                items_tmp.append(item+' ('+str(items[item])+' | '+str(max_data[0])+'/'+str(max_data[1])+')') # (item+' :'+str(items[item])+' / '+str( max of item in all other rows))
-            cluster_keywords.append(items_tmp)
+            cluster_keywords = []
+            cluster_index = 0
+            for i,items in enumerate(cluster_keywords_tfidf):
+                c = cluster_ids[i]
+                items_tmp = [c]
+                for item in items:
+                    max_data = find_max_item_value_in_all_cluster(cluster_keywords_tfidf,item,cluster_index)
+                    items_tmp.append(item+' ('+str(items[item])+' | '+str(max_data[0])+'/'+str(max_data[1])+')') # (item+' :'+str(items[item])+' / '+str( max of item in all other rows))
+                cluster_keywords.append(items_tmp)
+                
+                cluster_index+=1
+            cluster_keywords_df = pd.DataFrame(cluster_keywords)
+            cluster_keywords_df.to_csv(args.clustering_path+'t'+str(t)+' labels c.csv',index=False,header=False)
             
-            cluster_index+=1
-        cluster_keywords_df = pd.DataFrame(cluster_keywords)
-        cluster_keywords_df.to_csv(args.clustering_path+'t'+str(t)+' labels c t.csv',index=False,header=False)
+            
+            # Get term cluster labels (just terms and not scores)
+            cluster_keywords_terms = []
+            cluster_keywords_scores = []
+            for item in cluster_keywords_tfidf:
+                cluster_keywords_terms.append(list(item.keys()))
+                cluster_keywords_scores.append(list(item.values()))
+            
+            pd.DataFrame(cluster_keywords_terms).T.to_csv(args.clustering_path+'t'+str(t)+' terms.csv',index=False)
+            pd.DataFrame(cluster_keywords_scores).T.to_csv(args.clustering_path+'t'+str(t)+' scores.csv',index=False)
+            
+            # Get term frequencies for each period
+            terms = ' '.join(cluster_as_string).split()
+            terms = [x for x in terms if x not in list(stop_words)]
+            pd.DataFrame(terms,columns=['terms'])['terms'].value_counts().to_csv(args.clustering_path+'t'+str(t)+' frequency.csv',header=False)
+        except:
+            print("Aborted labeling")
+            print(traceback.format_exc())
+            print(e)
+            break
+    
+    try:
+        # final_classifications = classifications[-1]
+        # year_clusters = final_classifications[final_classifications['t']==max(final_classifications['t'])]['class'].value_counts().reset_index()
+        # year_clusters.columns = ['c','count']
+
+        all_nodes = list(G.nodes)
+        all_nodes = pd.DataFrame([[int(x.split('-t')[0]),int(x.split('-t')[1])] for x in all_nodes],columns=['c','t'])
+        all_nodes_g_max = all_nodes.groupby('c').max()
+        all_nodes_g_min = all_nodes.groupby('c').min()
+        all_nodes_g = all_nodes_g_min.copy()
+        all_nodes_g['tm'] = all_nodes_g_max['t']
+
+        for t in range(args.t_max-args.t_zero): # All keywords until time t
+            # t  = 4
+            # TF-IDF (CTF-ICF)
+            final_classifications = classifications[t]
+            year_clusters = final_classifications[final_classifications['t']==t]['class'].value_counts()
+            year_clusters = list(year_clusters.index)
+            cluster_as_string = []
+            cluster_ids = []
+            
+            working_df = classifications[t][classifications[t]['class'].isin(year_clusters)]
+            
+            year_kw = working_df['kw'].apply(lambda x: kw_to_string(x))
+            clusters_df = working_df.copy()
+            clusters = clusters_df.groupby('class').groups
+            for key in clusters.keys():
+                cluster_as_string.append(' '.join(year_kw[list(clusters[key])]))
+                cluster_ids.append(key)
+            cluster_keywords_tfidf = get_abstract_keywords(cluster_as_string,1000,max_df=0.8)
+            
+            cluster_keywords = []
+            cluster_index = 0
+            for i,items in enumerate(cluster_keywords_tfidf):
+                c = cluster_ids[i]
+                items_tmp = [c]
+                for item in items:
+                    max_data = find_max_item_value_in_all_cluster(cluster_keywords_tfidf,item,cluster_index)
+                    items_tmp.append(item+' ('+str(items[item])+' | '+str(max_data[0])+'/'+str(max_data[1])+')') # (item+' :'+str(items[item])+' / '+str( max of item in all other rows))
+                cluster_keywords.append(items_tmp)
+                
+                cluster_index+=1
+            cluster_keywords_df = pd.DataFrame(cluster_keywords)
+            cluster_keywords_df.to_csv(args.clustering_path+'t'+str(t)+' labels c t.csv',index=False,header=False)
+    except Exception as e:
+        print("Aborted labeling")
+        print(traceback.format_exc())
+        print(e)
+        pass
         
 def benchmark_sample(model):
     classifications_pure = model.classifications
@@ -2176,7 +2200,7 @@ if __name__ == '__main__':
     print('Running model...')
     model, combined_data = main(args,date)
     print('Running visualisation...')
-    visualise(args,model,date)
+    G, _ = visualise(args,model,date)
     print('Running labeling...')
-    labeling(args,model)
+    labeling(args,model,G)
 
