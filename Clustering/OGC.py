@@ -1706,8 +1706,8 @@ def main(args,date):
     del all_columns_
     gc.collect()
 
-    corpus_data = pd.read_csv(datapath+corpus_path)[['abstract','id']] # get the pre-processed abstracts
-    corpus_data.columns = ['abstract','id_n']
+    corpus_data = pd.read_csv(datapath+corpus_path)[['id']] # get the pre-processed abstracts
+    corpus_data.columns = ['id_n']
     vectors_main = pd.read_csv(datapath+vectros_main_path)#Corpus/Scopus new/embeddings/doc2vec 300D dm=1 window=10 b3 gensim41
     # vectors_main = pd.read_csv(datapath+'Corpus/Scopus new/embeddings/node2vec100D p2 q1 len5-w50 mc1 mt_w2v unsorted.csv',index_col=0).reset_index()#Corpus/Scopus new/embeddings/doc2vec 300D dm=1 window=10 b3 gensim41
 
@@ -1738,7 +1738,7 @@ def main(args,date):
     # =============================================================================
     # Concat data
     combined_data = pd.concat([all_columns, corpus_data, vectors_main,concept_embeddings], axis=1)
-    combined_data = combined_data.dropna(subset=['id','PY','abstract'])
+    combined_data = combined_data.dropna(subset=['id','PY'])
 
     # =============================================================================
     # Clean data
@@ -1784,7 +1784,7 @@ def main(args,date):
     vectors_t0 = combined_data[(combined_data.PY<t_zero)] # & (combined_data.PY>1999)
     vectors_t0_full = vectors_t0.copy()
     keywords = vectors_t0['DE'].values.tolist()
-    vectors_t0.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
+    vectors_t0.drop(['eid','PY','id','DE','id_n','concepts'],axis=1,inplace=True)
     vectors_t0_fixed = vectors_t0.copy()
     # vectors_t0_full = combined_data.loc[vectors_t0.index]
 
@@ -1826,7 +1826,7 @@ def main(args,date):
             model.v=5
             vectors_t1 = combined_data[combined_data.PY==year]
             keywords = vectors_t1['DE'].values.tolist()
-            vectors_t1.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
+            vectors_t1.drop(['eid','PY','id','DE','id_n','concepts'],axis=1,inplace=True)
             model.fit_update(vectors_t1.values, t+1, keywords)
             # model.get_class_radius(model.classifications,model.centroids,model.distance_metric)
             # model.get_class_radius(model.classifications,model.centroids,model.distance_metric)
@@ -1848,7 +1848,7 @@ def main(args,date):
             for y in tqdm(range(args.eval_start,args.eval_end,args.eval_step)):
                 vectors_t2 = combined_data[combined_data.PY==y]
                 keywords = vectors_t2['DE'].values.tolist()
-                vectors_t2.drop(['eid','PY','id','abstract','DE','id_n','concepts'],axis=1,inplace=True)
+                vectors_t2.drop(['eid','PY','id','DE','id_n','concepts'],axis=1,inplace=True)
                 predicted_labels_1 = model.predict(vectors_t2.values)
 
                 dbi.append(davies_bouldin_score(vectors_t2.values, predicted_labels_1))
@@ -2155,10 +2155,10 @@ def parse_arguments(args=None):
     parser.add_argument('--ontology_path', type=str, default='Corpus/ontology/concept_parents lvl2 DFS', help='Ontology path')
     parser.add_argument('--ontology_indexed_path', type=str, default='Corpus/ontology/keyword_search_pre-index.json', help='Ontology indexed path')
     parser.add_argument('--all_columns_path', type=str, default='Corpus/Scopus/keyword pre-processed for fasttext - nov14', help='All columns path')
-    parser.add_argument('--all_column_years_path', type=str, default='Corpus/Scopus/data with abstract', help='All column data with years column path')
+    parser.add_argument('--all_column_years_path', type=str, default='Corpus/Scopus/py', help='All column data with years column path')
     parser.add_argument('--concept_column_path', type=str, default='Corpus/Scopus/mapped concepts for keywords', help='Concept column path')
     parser.add_argument('--concept_embeddings_path', type=str, default='embeddings/node2vec 50D p1 q05 len20 average of concepts', help='Concept embeddings path')
-    parser.add_argument('--corpus_path', type=str, default='Corpus/Scopus/abstract_title method_b_3', help='Corpus path')
+    parser.add_argument('--corpus_path', type=str, default='Corpus/Scopus/ids', help='Corpus path')
     parser.add_argument('--vectros_main_path', type=str, default='embeddings/doc2vec 100D dm=1 window=12 gensim41', help='Vectros main path')
     parser.add_argument('--clustering_path', type=str, default='clustering results/ESWA/', help='Clustering path')
     parser.add_argument('--classifications_path', type=str, default='clustering results/ESWA/', help='Classification path')
